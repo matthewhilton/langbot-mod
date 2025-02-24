@@ -4,14 +4,19 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.text.Text;
 import okhttp3.*;
 import org.apache.commons.lang3.StringUtils;
+import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +97,30 @@ public class LanguageBotClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		// This entrypoint is suitable for setting up client-specific logic, such as rendering.
+		this.registerCommands();
+		this.registerKeyBinds();
+	}
+
+	private void registerKeyBinds() {
+		KeyBinding bind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+				"key.langbot.my_key",
+				InputUtil.Type.KEYSYM,
+				GLFW.GLFW_KEY_Y,
+				"category.langbot"
+		));
+
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (bind.wasPressed()) {
+				this.openGui();
+			}
+		});
+	}
+
+	private void openGui() {
+		client.setScreen(new LangBotScreen(new LangBotGui()));
+	}
+
+	private void registerCommands() {
 		CommandRegistrationCallback.EVENT.register(((commandDispatcher, commandRegistryAccess, registrationEnvironment) -> {
 			commandDispatcher.register(CommandManager.literal("test_command").executes(context -> {
 				// HUD messes with the image describer.
