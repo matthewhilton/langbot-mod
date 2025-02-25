@@ -1,6 +1,7 @@
 plugins {
 	id 'fabric-loom' version '1.10-SNAPSHOT'
 	id 'maven-publish'
+	id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 version = project.mod_version
@@ -46,7 +47,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-	implementation "com.squareup.okhttp3:okhttp:4.12.0"
+	shadow(implementation "com.squareup.okhttp3:okhttp:4.12.0")
 	modImplementation include("io.github.cottonmc:LibGui:12.0.1+1.21.2")
 }
 
@@ -78,6 +79,16 @@ jar {
 	from("LICENSE") {
 		rename { "${it}_${inputs.properties.archivesName}"}
 	}
+}
+
+shadowJar {
+	configurations = [project.configurations.implementation]
+	relocate 'okhttp3', 'matth.langbot.shadow.okhttp3' // Prevent conflicts
+}
+
+remapJar {
+	dependsOn(shadowJar)
+	inputFile = tasks.shadowJar.archiveFile
 }
 
 // configure the maven publication
