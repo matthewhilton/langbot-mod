@@ -1,0 +1,8 @@
+{
+  "langbot.text.name": "LangBot",
+  "langbot.text.recheckmodels": "Recheck models",
+  "langbot.text.runscreenshotandtranslate": "Run screenshot and translate",
+  "langbot.text.modelstatus.ok": "%s: OK",
+  "langbot.text.modelstatus.loading": "%s: Loading...",
+  "langbot.text.modelstatus.error": "%s: Error"
+}
