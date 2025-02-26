@@ -1,9 +1,7 @@
 package matth.langbot;
 
 import dev.isxander.yacl3.api.*;
-import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
 import dev.isxander.yacl3.api.controller.StringControllerBuilder;
-import dev.isxander.yacl3.api.controller.TickBoxControllerBuilder;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -23,10 +21,9 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.*;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 public class LanguageBotClient implements ClientModInitializer {
@@ -35,10 +32,8 @@ public class LanguageBotClient implements ClientModInitializer {
 	private static final MinecraftClient client = MinecraftClient.getInstance();
 
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-	
-	public static final AiClientHandler handler = new AiClientHandler(LOGGER, client);
 
-	public static final AIClientOpenAI openAiClient = new AIClientOpenAI(LOGGER);
+	public static final AiClient openAiClient = new AIClientOpenAI(LOGGER);
 
 	@Override
 	public void onInitializeClient() {
@@ -59,7 +54,7 @@ public class LanguageBotClient implements ClientModInitializer {
 
 	private void registerKeyBinds() {
 		KeyBinding bind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.langbot.my_key",
+				"langbot.key.opensettings",
 				InputUtil.Type.KEYSYM,
 				GLFW.GLFW_KEY_Y,
 				"category.langbot"
@@ -74,22 +69,19 @@ public class LanguageBotClient implements ClientModInitializer {
 
 	private void openGui() {
 		Screen screen = YetAnotherConfigLib.createBuilder()
-				.title(Text.literal("Used for narration. Could be used to render a title in the future."))
+				.title(Text.translatable("langbot.text.name"))
 				.category(ConfigCategory.createBuilder()
-						.name(Text.literal("Name of the category"))
-						.tooltip(Text.literal("This text will appear as a tooltip when you hover or focus the button with Tab. There is no need to add \n to wrap as YACL will do it for you."))
+						.name(Text.translatable("langbot.text.name"))
 						.group(OptionGroup.createBuilder()
-								.name(Text.literal("OpenAI Settings"))
-								.description(OptionDescription.of(Text.literal("OpenAI Settings")))
+								.name(Text.translatable("langbot.text.openai"))
 								.option(Option.<String>createBuilder()
-										.name(Text.literal("API Key"))
-										.description(OptionDescription.of(Text.literal("Key used to authenticate with OpenAI.")))
+										.name(Text.translatable("langbot.text.openai.apikey"))
+										.description(OptionDescription.of(Text.translatable("langbot.text.openai.apikey.description")))
 										.binding("", () -> LangBotConfig.HANDLER.instance().openAiKey, newVal -> LangBotConfig.HANDLER.instance().openAiKey = newVal)
 										.controller(StringControllerBuilder::create)
 										.build())
 								.option(ButtonOption.createBuilder()
-										.name(Text.literal("Check connection status"))
-										.description(OptionDescription.of(Text.literal("Check the API key can correctly communicate with OpenAI")))
+										.name(Text.translatable("langbot.text.connectioncheck"))
 										.text(Text.literal(""))
 										.action((s, option) -> {
 											openAiClient.requestConnectionCheck();
@@ -97,7 +89,7 @@ public class LanguageBotClient implements ClientModInitializer {
 										.build())
 								.option(LabelOption.createBuilder()
 										// This is a hack to get updating labels. But it doesn't update the sidebar. TODO implement this properly (likely upstream lib modification).
-										.state(StateManager.createInstant(Binding.generic(Text.literal("default"), () -> openAiClient.isConnectionOk() ? Text.literal("Connection OK").formatted(Formatting.GREEN) : Text.literal("Connection ERROR").formatted(Formatting.RED), v -> {})))
+										.state(StateManager.createInstant(Binding.generic(Text.literal(""), () -> openAiClient.isConnectionOk() ? Text.translatable("langbot.text.connectioncheck.ok").formatted(Formatting.GREEN) : Text.translatable("langbot.text.connectioncheck.error").formatted(Formatting.RED), v -> {})))
 										.build())
 								.build())
 						.build())
@@ -122,19 +114,20 @@ public class LanguageBotClient implements ClientModInitializer {
 				client.options.hudHidden = false;
 				client.player.sendMessage(Text.literal("Processing..."), false);
 
-				// Must be < 256 chars to send to client.
                 try {
-                    String description = StringUtils.left(openAiClient.describeImageWithPrompt(Path.of(client.runDirectory.toString(), "screenshots", "test.jpeg"), "describe the image in simple terms but don't mention minecraft or video games. max 1 sentence. max 10 words."), 255);
+					Path imagePath = Path.of(client.runDirectory.toString(), "screenshots", "test.jpeg");
+					String describePrompt = "describe the image in simple terms but don't mention minecraft or video games. max 1 sentence. max 10 words.";
+					String translatePromptPrefix = "Translate to German do not say anything else:";
+                    String description = openAiClient.executePrompt(describePrompt, Optional.of(imagePath));
                 	client.player.sendMessage(Text.literal(description), false);
+
+					String translation = openAiClient.executePrompt(translatePromptPrefix + description, Optional.empty());
+					client.player.sendMessage(Text.literal(translation), false);
 				} catch (IOException e) {
                     LOGGER.error(e.getMessage());
+					// TODO this formatting is stripped.
+					client.player.sendMessage(Text.translatable("langbot.error.unknown", e.getMessage().formatted(Formatting.RED)), false);
                 }
-
-				/*Objects.requireNonNull(client.player).networkHandler.sendChatMessage(description);
-				Objects.requireNonNull(client.player).networkHandler.sendChatMessage("Translating into German");
-
-				String translation = StringUtils.left(handler.translateDescriptionIntoLanguage("German", description), 255);
-				Objects.requireNonNull(client.player).networkHandler.sendChatMessage(translation);*/
 			};
 
 			ScreenshotRecorder.saveScreenshot(client.runDirectory, "test.jpeg", buffer, callback);

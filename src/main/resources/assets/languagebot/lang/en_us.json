@@ -1,8 +1,12 @@
 {
   "langbot.text.name": "LangBot",
-  "langbot.text.recheckmodels": "Recheck models",
-  "langbot.text.runscreenshotandtranslate": "Run screenshot and translate",
-  "langbot.text.modelstatus.ok": "%s: OK",
-  "langbot.text.modelstatus.loading": "%s: Loading...",
-  "langbot.text.modelstatus.error": "%s: Error"
+  "langbot.text.openai": "OpenAI",
+  "langbot.text.openai.apikey": "API Key",
+  "langbot.text.openai.apikey.description": "Key used to authenticate with OpenAI",
+  "langbot.text.connectioncheck": "Check connection status",
+  "langbot.text.connectioncheck.ok": "Connection OK",
+  "langbot.text.connectioncheck.error": "Connection ERROR",
+  "langbot.key.opensettings": "Open settings",
+  "category.langbot": "Langbot",
+  "langbot.error.unknown": "Unknown error %s"
 }

@@ -10,7 +10,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class AIClientOpenAI implements AiClient {
@@ -20,6 +23,7 @@ public class AIClientOpenAI implements AiClient {
     private static String ENDPOINT_MODELS = "/v1/models";
 
     private static String VISION_MODEL = "gpt-4o-mini";
+    private static String CHAT_MODEL = "gpt-4o-mini";
 
     private final Logger LOGGER;
 
@@ -34,26 +38,28 @@ public class AIClientOpenAI implements AiClient {
     }
 
     @Override
-    public String describeImageWithPrompt(Path imagePath, String prompt) throws IOException {
+    public String executePrompt(String prompt, Optional<Path> imagePath) throws IOException {
         // Build json body.
-        byte[] imageBytes = Files.readAllBytes(imagePath);
-        String base64Image = Base64.getEncoder().encodeToString(imageBytes);
-
-        JsonObject imageUrlObject = new JsonObject();
-        imageUrlObject.addProperty("detail", "low");
-        imageUrlObject.addProperty("url", "data:image/png;base64," + base64Image);
-
-        JsonObject imagePromptObject = new JsonObject();
-        imagePromptObject.addProperty("type", "image_url");
-        imagePromptObject.add("image_url", imageUrlObject);
-
         JsonObject textPromptObject = new JsonObject();
         textPromptObject.addProperty("type", "text");
         textPromptObject.addProperty("text", prompt);
 
         JsonArray messageContentArray = new JsonArray();
         messageContentArray.add(textPromptObject);
-        messageContentArray.add(imagePromptObject);
+
+        if (!imagePath.isEmpty()) {
+            byte[] imageBytes = Files.readAllBytes(imagePath.get());
+            String base64Image = Base64.getEncoder().encodeToString(imageBytes);
+
+            JsonObject imageUrlObject = new JsonObject();
+            imageUrlObject.addProperty("detail", "low");
+            imageUrlObject.addProperty("url", "data:image/png;base64," + base64Image);
+
+            JsonObject imagePromptObject = new JsonObject();
+            imagePromptObject.addProperty("type", "image_url");
+            imagePromptObject.add("image_url", imageUrlObject);
+            messageContentArray.add(imagePromptObject);
+        }
 
         JsonObject messageObject = new JsonObject();
         messageObject.addProperty("role", "user");
@@ -63,7 +69,7 @@ public class AIClientOpenAI implements AiClient {
         messagesArray.add(messageObject);
 
         JsonObject jsonObject = new JsonObject();
-        jsonObject.addProperty("model",  VISION_MODEL);
+        jsonObject.addProperty("model",  imagePath.isEmpty() ? CHAT_MODEL : VISION_MODEL);
         jsonObject.addProperty("store", false);
         jsonObject.add("messages", messagesArray);
 
@@ -87,11 +93,6 @@ public class AIClientOpenAI implements AiClient {
     }
 
     @Override
-    public String translateIntoLanguage(String message, String language) {
-        return "";
-    }
-
-    @Override
     public boolean isConnectionOk() {
         return isConnectionOk;
     }
@@ -105,10 +106,16 @@ public class AIClientOpenAI implements AiClient {
             if (response.body() == null) throw new IOException("No body");
             JsonObject json = JsonParser.parseString(response.body().string()).getAsJsonObject();
 
-            // Ensure the VISION_MODEL is in the list of available models.
-            Stream<String> availableModels = json.getAsJsonArray("data").asList().stream().map(e -> e.getAsJsonObject().get("id").getAsString());
-            if (availableModels.noneMatch(v -> Objects.equals(v, VISION_MODEL))) {
+            // Ensure the required models are in the list of available models.
+            List<String> availableModels = json.getAsJsonArray("data").asList().stream().map(e -> e.getAsJsonObject().get("id").getAsString()).collect(Collectors.toList());
+            if (!availableModels.contains(VISION_MODEL)) {
                 LOGGER.error("Required vision model {} not found", VISION_MODEL);
+                isConnectionOk = false;
+                return;
+            }
+
+            if (!availableModels.contains(CHAT_MODEL)) {
+                LOGGER.error("Required chat model {} not found", CHAT_MODEL);
                 isConnectionOk = false;
                 return;
             }
