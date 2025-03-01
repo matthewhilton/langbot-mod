@@ -27,8 +27,14 @@ public class AIClientOpenAI implements AiClient {
 
     private final Logger LOGGER;
 
+    private int tokensUsed = 0;
+
     public AIClientOpenAI(Logger logger) {
         LOGGER = logger;
+    }
+
+    public int getTokensUsed() {
+        return this.tokensUsed;
     }
 
     private Request.Builder getOpenAiRequest(String endpoint) {
@@ -88,6 +94,8 @@ public class AIClientOpenAI implements AiClient {
 
         JsonObject jsonResponse = JsonParser.parseString(response.body().string()).getAsJsonObject();
         response.body().close();
+
+        this.tokensUsed += jsonResponse.getAsJsonObject("usage").get("total_tokens").getAsInt();
 
         return jsonResponse.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").get("content").getAsString();
     }

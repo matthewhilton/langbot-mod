@@ -6,6 +6,7 @@
   "langbot.text.connectioncheck": "Check connection status",
   "langbot.text.connectioncheck.ok": "Connection OK",
   "langbot.text.connectioncheck.error": "Connection ERROR",
+  "langbot.text.openai.tokensused": "Tokens used: %s",
   "langbot.key.opensettings": "Open settings",
   "category.langbot": "Langbot",
   "langbot.error.unknown": "Unknown error %s"
