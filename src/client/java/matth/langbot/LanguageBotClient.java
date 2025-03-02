@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
@@ -111,44 +112,42 @@ public class LanguageBotClient implements ClientModInitializer {
 		});
 	}
 
-	private Runnable getRunnableScreenshotAndTranslate() {
-		return () -> {
-			// HUD messes with the image describer.
-			client.options.hudHidden = true;
-			Framebuffer buffer = client.getFramebuffer();
+	private void takeAndSendScreenshot(Runnable afterDone) {
+		// HUD messes with the image describer.
+		client.options.hudHidden = true;
+		Framebuffer buffer = client.getFramebuffer();
 
-			Consumer<Text> callback = s -> {
-				client.options.hudHidden = false;
-				client.player.sendMessage(Text.literal("Processing..."), false);
+		Consumer<Text> callback = s -> {
+			client.options.hudHidden = false;
 
-                try {
-					Path imagePath = Path.of(client.runDirectory.toString(), "screenshots", "test.jpeg");
-					String describePrompt = "Give one short A1 level German question about the image contents. Do not ask about where. Only give the question nothing else. Max 10 words.";
-                    String description = openAiClient.executePrompt(describePrompt, Optional.of(imagePath));
-					this.lastPromptResponse = description;
-					client.player.sendMessage(this.makeWordsTranslatable(description), false);
-				} catch (IOException e) {
-                    LOGGER.error(e.getMessage());
-					client.player.sendMessage(Text.translatable("langbot.error.unknown", e.getMessage()), false);
-                }
-			};
+			Path imagePath = Path.of(client.runDirectory.toString(), "screenshots", "test.jpeg");
+            try {
+                openAiClient.addImageToSession(imagePath);
+				afterDone.run();
+            } catch (Exception e) {
+                LOGGER.error(e.toString());
+				LOGGER.error(Arrays.toString(e.getStackTrace()));
+            }
+        };
 
-			ScreenshotRecorder.saveScreenshot(client.runDirectory, "test.jpeg", buffer, callback);
-		};
+		ScreenshotRecorder.saveScreenshot(client.runDirectory, "test.jpeg", buffer, callback);
 	}
 
-	private Runnable replyToPrompt(String reply, boolean includePrevious) {
+	private Runnable startCommand() {
 		return () -> {
-			try {
-				client.player.sendMessage(Text.literal("Processing..."), false);
-				String prompt = (includePrevious ? "Previous prompt: " + this.lastPromptResponse + ". Reply: " : "") + reply + ". Reply with only 1 sentence of max 12 words.";
-				String output = openAiClient.executePrompt(prompt, Optional.empty());
-				this.lastPromptResponse = output;
-				client.player.sendMessage(this.makeWordsTranslatable(output), false);
-			} catch (IOException e) {
-				LOGGER.error(e.getMessage());
-				client.player.sendMessage(Text.translatable("langbot.error.unknown", e.getMessage()), false);
-			}
+			// First start new session.
+			openAiClient.startNewSession();
+
+			// Then send the current screenshot.
+			takeAndSendScreenshot(() -> {
+				// TODO. send the response?
+                try {
+                    String res = openAiClient.runSession();
+					client.player.sendMessage(this.makeWordsTranslatable(res), false);
+                } catch (Exception e) {
+                    LOGGER.error(e.getMessage());
+                }
+            });
 		};
 	}
 
@@ -179,11 +178,12 @@ public class LanguageBotClient implements ClientModInitializer {
 			commandDispatcher.register(CommandManager
 				.literal("lb")
 				.then(CommandManager.literal("start").executes(context -> {
-					this.getRunnableScreenshotAndTranslate().run();
+					this.startCommand().run();
 					return Command.SINGLE_SUCCESS;
 				})));
 		}));
 
+		/*
 		CommandRegistrationCallback.EVENT.register(((commandDispatcher, commandRegistryAccess, registrationEnvironment) -> {
 			commandDispatcher.register(CommandManager
 				.literal("lb")
@@ -204,6 +204,6 @@ public class LanguageBotClient implements ClientModInitializer {
 								return Command.SINGLE_SUCCESS;
 							}))
 					));
-		}));
+		}));*/
 	}
 }
