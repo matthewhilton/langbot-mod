@@ -25,7 +25,9 @@ import org.slf4j.LoggerFactory;
 import java.awt.*;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
@@ -39,8 +41,6 @@ public class LanguageBotClient implements ClientModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
 	public static final AIClientOpenAI openAiClient = new AIClientOpenAI(LOGGER);
-
-	private String lastPromptResponse = "";
 
 	@Override
 	public void onInitializeClient() {
@@ -113,10 +113,6 @@ public class LanguageBotClient implements ClientModInitializer {
 	}
 
 	private void takeAndSendScreenshot(Runnable afterDone) {
-		// HUD messes with the image describer.
-		client.options.hudHidden = true;
-		Framebuffer buffer = client.getFramebuffer();
-
 		Consumer<Text> callback = s -> {
 			client.options.hudHidden = false;
 
@@ -130,47 +126,51 @@ public class LanguageBotClient implements ClientModInitializer {
             }
         };
 
-		ScreenshotRecorder.saveScreenshot(client.runDirectory, "test.jpeg", buffer, callback);
+		// Wait a few ticks - the hud takes a bit of time to actually close.
+		client.options.hudHidden = true;
+		Framebuffer buffer = client.getFramebuffer();
+
+		ClientTickDelay.waitTicks(1, () -> {
+			ScreenshotRecorder.saveScreenshot(client.runDirectory, "test.jpeg", buffer, callback);
+		});
 	}
 
 	private Runnable startCommand() {
 		return () -> {
-			// First start new session.
-			openAiClient.startNewSession();
-
-			// Then send the current screenshot.
-			takeAndSendScreenshot(() -> {
-				// TODO. send the response?
-                try {
-                    String res = openAiClient.runSession();
-					client.player.sendMessage(this.makeWordsTranslatable(res), false);
-                } catch (Exception e) {
-                    LOGGER.error(e.getMessage());
-                }
-            });
+			try {
+				openAiClient.startNewSession();
+			} catch (Exception e) {
+				LOGGER.error(e.getMessage());
+			}
 		};
 	}
 
-	private Text makeWordsTranslatable(String text) {
-		// Split each word and add a hover event for each to find out the meaning.
-		Pattern textPattern = Pattern.compile("[a-zA-Z]");
-		return Arrays.stream(text.split(" ")).map(descriptionWord -> {
-			// Return part plainly if it has no text (e.g. is symbols or numbers).
-			if (!textPattern.matcher(descriptionWord).find()) {
-				return Text.literal(descriptionWord)
-					.styled(style -> style
-						.withColor(Formatting.WHITE)
-					);
-			}
+	private Runnable sendScreenshotCommand() {
+		return () -> {
+			takeAndSendScreenshot(() -> {
+				try {
+					this.respondToUser(openAiClient.runSession());
+				} catch (Exception e) {
+					LOGGER.error(e.getMessage());
+				}
+			});
+		};
+	}
 
-			// Else add hover.
-			return Text.literal(descriptionWord)
-				.styled(style -> style
-					.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(String.format("Was bedeutet '%s'", descriptionWord))))
-					.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, String.format("/lb prompt Give the definition in German in maximum 10 words of '%s'. Ignore any punctuation.", descriptionWord)))
-					.withColor(Formatting.GREEN)
-				);
-		}).reduce(Text.empty(), (prev, next) -> prev.append(" ").append(next));
+	private Runnable sendPromptCommand(String prompt) {
+		return () -> {
+            try {
+				openAiClient.addChatToSession(prompt);
+                this.respondToUser(openAiClient.runSession());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+	}
+
+	private void respondToUser(String message) {
+		OutputProcessor processor =  new OutputProcessor();
+		Objects.requireNonNull(client.player).sendMessage(processor.processIntoText(message), false);
 	}
 
 	private void registerCommands() {
@@ -183,27 +183,27 @@ public class LanguageBotClient implements ClientModInitializer {
 				})));
 		}));
 
-		/*
 		CommandRegistrationCallback.EVENT.register(((commandDispatcher, commandRegistryAccess, registrationEnvironment) -> {
 			commandDispatcher.register(CommandManager
 				.literal("lb")
-				.then(CommandManager.literal("prompt")
-						.then(CommandManager.argument("prompt", StringArgumentType.greedyString()).executes(context -> {
-							this.replyToPrompt(StringArgumentType.getString(context, "prompt"), false).run();
-							return Command.SINGLE_SUCCESS;
-						}))
-					));
+				.then(CommandManager.literal("picture").executes(context -> {
+					this.sendScreenshotCommand().run();
+					return Command.SINGLE_SUCCESS;
+				})));
 		}));
 
 		CommandRegistrationCallback.EVENT.register(((commandDispatcher, commandRegistryAccess, registrationEnvironment) -> {
 			commandDispatcher.register(CommandManager
 					.literal("lb")
-					.then(CommandManager.literal("reply")
-							.then(CommandManager.argument("reply", StringArgumentType.greedyString()).executes(context -> {
-								this.replyToPrompt(StringArgumentType.getString(context, "reply"), true).run();
+					.then(CommandManager.literal("prompt").then(
+							CommandManager.argument("prompt", StringArgumentType.greedyString()).executes(ctx -> {
+								String prompt = StringArgumentType.getString(ctx, "prompt");
+								this.sendPromptCommand(prompt).run();
 								return Command.SINGLE_SUCCESS;
-							}))
-					));
-		}));*/
+							}
+						))
+					)
+			);
+		}));
 	}
 }

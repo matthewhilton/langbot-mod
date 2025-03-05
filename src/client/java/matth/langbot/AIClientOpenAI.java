@@ -97,7 +97,7 @@ public class AIClientOpenAI implements AiClientBase, AiSessionClient {
             // Start a new assistant.
             JsonElement newAssistantBody = JsonParser.parseString("""
                     {
-                    "instructions": "You will be given an image of a Minecraft world. Help the A1-A2 german learner to understand what is contained inside of it in german. Be succinct, max 10 words.",
+                    "instructions": "Respond with one or two A1/A2 level German sentences.",
                     "name": "German teacher",
                     "model": %s
                     }
@@ -110,17 +110,24 @@ public class AIClientOpenAI implements AiClientBase, AiSessionClient {
             JsonObject threadResponse = this.callAndGetJson(this.getOpenAiRequest(ENDPOINT_THREADS).post(RequestBody.Companion.create(new byte[0])).build());
             threadId = threadResponse.get("id").getAsString();
             LOGGER.info("New thread created {}", threadId);
-        } catch (IOException e) {
+
+            // This assistant tends to forget instructions, so constantly remind it.
+            //this.addInstructionToSession("");
+        } catch (Exception e) {
             LOGGER.error(e.toString());
             isConnectionOk = false;
         }
     }
 
+    private void ensureSessionStarted() {
+        if (this.threadId == null) {
+            this.startNewSession();
+        }
+    }
+
     @Override
     public void addImageToSession(Path imagePath) throws Exception {
-        if (threadId == null) {
-            throw new Exception("No assistant or thread started yet");
-        }
+        this.ensureSessionStarted();
 
         // First we need to upload it as a file.
         // (assistant api does not support receiving base64 images currently).
@@ -141,19 +148,19 @@ public class AIClientOpenAI implements AiClientBase, AiSessionClient {
 
         // Add this file in a message to the thread.
         JsonElement newMessageBody = JsonParser.parseString("""
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_file",
-                        "image_file": {
-                            "detail": "low",
-                            "file_id": "%s"
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_file",
+                            "image_file": {
+                                "detail": "low",
+                                "file_id": "%s"
+                            }
                         }
-                    }
-                ]
-            }
-            """.formatted(fileid));
+                    ]
+                }
+                """.formatted(fileid));
         String path = "%s/%s/messages".formatted(ENDPOINT_THREADS, threadId);
         JsonObject newMessageResponse = this.callAndGetJson(this.getOpenAiRequest(path).post(RequestBody.Companion.create(newMessageBody.toString(), MediaType.get("application/json"))).build());
         String id = newMessageResponse.get("id").getAsString();
@@ -161,12 +168,34 @@ public class AIClientOpenAI implements AiClientBase, AiSessionClient {
     }
 
     @Override
-    public void addChatToSession(String chat) {
-        // TODO.
+    public void addChatToSession(String chat) throws Exception {
+        this.addMessage(chat, "user");
+    }
+
+    @Override
+    public void addInstructionToSession(String chat) throws Exception {
+        this.addMessage(chat, "assistant");
+    }
+
+    private void addMessage(String chat, String role) throws Exception {
+        this.ensureSessionStarted();
+
+        JsonElement newMessageBody = JsonParser.parseString("""
+            {
+                "role": "%s",
+                "content": "%s"
+            }
+            """.formatted(role, chat));
+        String path = "%s/%s/messages".formatted(ENDPOINT_THREADS, threadId);
+        JsonObject newMessageResponse = this.callAndGetJson(this.getOpenAiRequest(path).post(RequestBody.Companion.create(newMessageBody.toString(), MediaType.get("application/json"))).build());
+        String id = newMessageResponse.get("id").getAsString();
+        LOGGER.info("Chat message added to thread {}", id);
     }
 
     @Override
     public String runSession() throws Exception {
+
+
         String endpoint = "%s/%s/runs".formatted(ENDPOINT_THREADS, threadId);
         String body = """
             {

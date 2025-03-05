@@ -7,6 +7,9 @@ import java.util.Optional;
 public interface AiSessionClient {
     public void startNewSession();
     public void addImageToSession(Path imagePath) throws Exception;
-    public void addChatToSession(String chat);
+    public void addChatToSession(String chat) throws Exception;
+
+    void addInstructionToSession(String chat) throws Exception;
+
     public String runSession() throws Exception;
 }
